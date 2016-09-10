@@ -6,12 +6,14 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.alexvasilkov.android.commons.adapters.ItemsAdapter;
 import com.alexvasilkov.android.commons.utils.Views;
 import com.alexvasilkov.foldablelayout.sample.R;
+import com.alexvasilkov.foldablelayout.sample.activities.FoldableListActivity;
 import com.alexvasilkov.foldablelayout.sample.activities.UnfoldableDetailsActivity;
-import com.squareup.picasso.Picasso;
+import com.alexvasilkov.foldablelayout.sample.utils.GlideHelper;
 
 import java.util.Arrays;
 
@@ -24,7 +26,7 @@ public class PaintingsAdapter extends ItemsAdapter<Painting> implements View.OnC
 
     @Override
     protected View createView(Painting item, int pos, ViewGroup parent, LayoutInflater inflater) {
-        View view = LayoutInflater.from(parent.getContext()).inflate(R.layout.list_item, parent, false);
+        View view = inflater.inflate(R.layout.list_item, parent, false);
         ViewHolder vh = new ViewHolder();
         vh.image = Views.find(view, R.id.list_item_image);
         vh.image.setOnClickListener(this);
@@ -38,16 +40,18 @@ public class PaintingsAdapter extends ItemsAdapter<Painting> implements View.OnC
     protected void bindView(Painting item, int pos, View convertView) {
         ViewHolder vh = (ViewHolder) convertView.getTag();
 
-        vh.image.setTag(item);
-        Picasso.with(convertView.getContext()).load(item.getImageId()).noFade().into(vh.image);
+        vh.image.setTag(R.id.list_item_image, item);
+        GlideHelper.loadPaintingImage(vh.image, item);
         vh.title.setText(item.getTitle());
     }
 
     @Override
     public void onClick(View view) {
+        Painting item = (Painting) view.getTag(R.id.list_item_image);
         if (view.getContext() instanceof UnfoldableDetailsActivity) {
-            UnfoldableDetailsActivity activity = (UnfoldableDetailsActivity) view.getContext();
-            activity.openDetails(view, (Painting) view.getTag());
+            ((UnfoldableDetailsActivity) view.getContext()).openDetails(view, item);
+        } else if (view.getContext() instanceof FoldableListActivity) {
+            Toast.makeText(view.getContext(), item.getTitle(), Toast.LENGTH_SHORT).show();
         }
     }
 

@@ -2,6 +2,7 @@ package com.alexvasilkov.foldablelayout;
 
 import android.content.Context;
 import android.graphics.Rect;
+import android.os.Build;
 import android.util.AttributeSet;
 import android.view.Gravity;
 import android.view.View;
@@ -10,7 +11,7 @@ import android.widget.BaseAdapter;
 import android.widget.FrameLayout;
 
 /**
- * View that provides ability to switch between 2 diffrent views (cover view & details view)
+ * View that provides ability to switch between 2 different views (cover view & details view)
  * with fold animation.
  * <p/>
  * It is implemented as subclass of FoldableListLayout with only 2 views to scroll between.
@@ -19,28 +20,41 @@ public class UnfoldableView extends FoldableListLayout {
 
     private static final float DEFAULT_SCROLL_FACTOR = 2f;
 
-    private View mDefaultDetailsPlaceHolderView;
-    private View mDefaultCoverPlaceHolderView;
+    private static final int STATE_FOLDED = 0;
+    private static final int STATE_UNFOLDING = 1;
+    private static final int STATE_UNFOLDED = 2;
+    private static final int STATE_FOLDING = 3;
 
-    private View mDetailsView, mCoverView;
-    private View mDetailsPlaceHolderView, mCoverPlaceHolderView;
-    private CoverHolderLayout mCoverHolderLayout;
 
-    private View mScheduledCoverView, mScheduledDetailsView;
+    private View defaultDetailsPlaceHolderView;
+    private View defaultCoverPlaceHolderView;
 
-    private ViewGroup.LayoutParams mDetailsViewParams, mCoverViewParams;
-    private int mDetailsViewParamWidth, mDetailsViewParamHeight;
-    private int mCoverViewParamWidth, mCoverViewParamHeight;
-    private Rect mCoverViewPosition, mDetailsViewPosition;
+    private View detailsView;
+    private View coverView;
 
-    private Adapter mAdapter;
+    private View scheduledCoverView;
+    private View scheduledDetailsView;
 
-    private float mLastFoldRotation;
-    private boolean mIsUnfolding;
-    private boolean mIsFoldingBack;
-    private boolean mIsUnfolded;
+    private View detailsPlaceHolderView;
+    private View coverPlaceHolderView;
+    private CoverHolderLayout coverHolderLayout;
 
-    private OnFoldingListener mListener;
+    private boolean origClipChildren;
+    private ViewGroup.LayoutParams detailsViewParams;
+    private ViewGroup.LayoutParams coverViewParams;
+    private int detailsViewParamWidth;
+    private int detailsViewParamHeight;
+    private int coverViewParamWidth;
+    private int coverViewParamHeight;
+    private Rect coverViewPosition;
+    private Rect detailsViewPosition;
+
+    private Adapter adapter;
+
+    private float lastFoldRotation;
+    private int state = STATE_FOLDED;
+
+    private OnFoldingListener foldingListener;
 
     public UnfoldableView(Context context) {
         super(context);
@@ -58,129 +72,70 @@ public class UnfoldableView extends FoldableListLayout {
     }
 
     private void init(Context context) {
-        mCoverHolderLayout = new CoverHolderLayout(context);
-        mDefaultDetailsPlaceHolderView = new View(context);
-        mDefaultCoverPlaceHolderView = new View(context);
-        mAdapter = new Adapter();
+        coverHolderLayout = new CoverHolderLayout(context);
+        defaultDetailsPlaceHolderView = new View(context);
+        defaultCoverPlaceHolderView = new View(context);
+        adapter = new Adapter();
 
         setScrollFactor(DEFAULT_SCROLL_FACTOR);
     }
 
     public void setOnFoldingListener(OnFoldingListener listener) {
-        mListener = listener;
+        this.foldingListener = listener;
     }
 
-    private void setDetailsViewInternal(View detailsView) {
-        // saving details view data
-        mDetailsView = detailsView;
-        mDetailsViewParams = detailsView.getLayoutParams();
-        mDetailsViewParamWidth = mDetailsViewParams.width;
-        mDetailsViewParamHeight = mDetailsViewParams.height;
-
-        // getting details view positions on screen
-        mDetailsViewPosition = getViewGlobalPosition(detailsView);
-
-        // creating placeholder to show in place of details view
-        mDetailsPlaceHolderView = createDetailsPlaceHolderView();
-
-        // setting precise width/height params and switching details view with it's placeholder
-        mDetailsViewParams.width = mDetailsViewPosition.width();
-        mDetailsViewParams.height = mDetailsViewPosition.height();
-        switchViews(detailsView, mDetailsPlaceHolderView, mDetailsViewParams);
-    }
-
-    private void clearDetailsViewInternal() {
-        if (mDetailsView == null) return; // nothing to do
-
-        // restoring original width/height params and adding cover view back to it's place
-        mDetailsViewParams.width = mDetailsViewParamWidth;
-        mDetailsViewParams.height = mDetailsViewParamHeight;
-        switchViews(mDetailsPlaceHolderView, mDetailsView, mDetailsViewParams);
-
-        // clearing references
-        mDetailsView = null;
-        mDetailsViewParams = null;
-        mDetailsViewPosition = null;
-        mDetailsPlaceHolderView = null;
-    }
-
-    private void setCoverViewInternal(View coverView) {
-        // saving cover view data
-        mCoverView = coverView;
-        mCoverViewParams = coverView.getLayoutParams();
-        mCoverViewParamWidth = mCoverViewParams.width;
-        mCoverViewParamHeight = mCoverViewParams.height;
-
-        // getting cover view positions on screen
-        mCoverViewPosition = getViewGlobalPosition(coverView);
-
-        // creating placeholder to show in place of cover view
-        mCoverPlaceHolderView = createCoverPlaceHolderView();
-
-        // setting precise width/height params and switching cover view with it's placeholder
-        mCoverViewParams.width = mCoverViewPosition.width();
-        mCoverViewParams.height = mCoverViewPosition.height();
-        switchViews(coverView, mCoverPlaceHolderView, mCoverViewParams);
-
-        // moving cover view into special cover view holder (for unfold animation)
-        mCoverHolderLayout.setView(coverView, mCoverViewPosition.width(), mCoverViewPosition.height());
-    }
-
-    private void clearCoverViewInternal() {
-        if (mCoverView == null) return; // nothing to do
-
-        // freeing coverView so we can add it back to it's palce
-        mCoverHolderLayout.clearView();
-
-        // restoring original width/height params and adding cover view back to it's place
-        mCoverViewParams.width = mCoverViewParamWidth;
-        mCoverViewParams.height = mCoverViewParamHeight;
-        switchViews(mCoverPlaceHolderView, mCoverView, mCoverViewParams);
-
-        // clearing references
-        mCoverView = null;
-        mCoverViewParams = null;
-        mCoverViewPosition = null;
-        mCoverPlaceHolderView = null;
-    }
-
+    @SuppressWarnings("unused") // Public API
     public void changeCoverView(View coverView) {
-        if (mCoverView == null || mCoverView == coverView) return; // nothing to do
+        if (this.coverView == null || this.coverView == coverView) {
+            return; // Nothing to do
+        }
         clearCoverViewInternal();
         setCoverViewInternal(coverView);
     }
 
     protected View createDetailsPlaceHolderView() {
-        return mDefaultDetailsPlaceHolderView;
+        return defaultDetailsPlaceHolderView;
     }
 
     protected View createCoverPlaceHolderView() {
-        return mDefaultCoverPlaceHolderView;
+        return defaultCoverPlaceHolderView;
     }
 
     /**
-     * Starting unfold animation for given views
+     * Starting unfold animation for given views.
      */
     public void unfold(View coverView, View detailsView) {
-        if (mCoverView == coverView && mDetailsView == detailsView) return; // already in place
+        if (this.coverView == coverView && this.detailsView == detailsView) {
+            scrollToPosition(1); // Starting unfold animation
+            return;
+        }
 
-        if ((mCoverView != null && mCoverView != coverView)
-                || (mDetailsView != null && mDetailsView != detailsView)) {
-            // cover or details view is differ - closing details and schedule reopening
-            mScheduledDetailsView = detailsView;
-            mScheduledCoverView = coverView;
+        if ((this.coverView != null && this.coverView != coverView)
+                || (this.detailsView != null && this.detailsView != detailsView)) {
+            // Cover or details view is differ - closing details and schedule reopening
+            scheduledCoverView = coverView;
+            scheduledDetailsView = detailsView;
             foldBack();
             return;
         }
 
+        // Enabling children clipping, it will be needed if cover view is bigger then half
+        // of details view, see CoverHolderLayout#onMeasyre() method.
+        ViewGroup parent = (ViewGroup) getParent();
+        // In old versions we can't know if children clipping is enabled, we'll assume it's enabled
+        origClipChildren = true;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
+            origClipChildren = parent.getClipChildren();
+        }
+        parent.setClipChildren(false);
+
+        // Initializing foldable views
         setCoverViewInternal(coverView);
         setDetailsViewInternal(detailsView);
+        setAdapter(adapter);
 
-        // initializing foldable views
-        setAdapter(mAdapter);
-
-        // starting unfold animation
-        scrollToPosition(1);
+        setState(STATE_UNFOLDING);
+        scrollToPosition(1); // starting unfold animation
     }
 
     public void foldBack() {
@@ -188,93 +143,121 @@ public class UnfoldableView extends FoldableListLayout {
     }
 
     private void onFoldedBack() {
-        // clearing all foldable views
+        // Clearing all foldable views and reverting to initial state
         setAdapter(null);
 
+        ((ViewGroup) getParent()).setClipChildren(origClipChildren);
         clearCoverViewInternal();
         clearDetailsViewInternal();
 
-        // clearing translations
-        setTranslationX(0);
-        setTranslationY(0);
+        // Clearing translations
+        setTranslationX(0f);
+        setTranslationY(0f);
 
-        if (mScheduledCoverView != null && mScheduledDetailsView != null) {
-            View scheduledDetails = mScheduledDetailsView;
-            View scheduledCover = mScheduledCoverView;
-            mScheduledDetailsView = mScheduledCoverView = null;
-            unfold(scheduledCover, scheduledDetails);
-        }
+        Utils.postOnAnimation(this, new Runnable() {
+            @Override
+            public void run() {
+                if (scheduledCoverView != null && scheduledDetailsView != null) {
+                    unfold(scheduledCoverView, scheduledDetailsView);
+                    scheduledCoverView = scheduledDetailsView = null;
+                }
+            }
+        });
     }
 
     public boolean isUnfolding() {
-        return mIsUnfolding;
+        return state == STATE_UNFOLDING;
     }
 
+    @SuppressWarnings("unused") // Public API
     public boolean isFoldingBack() {
-        return mIsFoldingBack;
+        return state == STATE_FOLDING;
     }
 
     public boolean isUnfolded() {
-        return mIsUnfolded;
+        return state == STATE_UNFOLDED;
+    }
+
+    private void setState(int state) {
+        if (this.state != state) {
+            this.state = state;
+
+            if (state == STATE_FOLDED) {
+                onFoldedBack();
+            }
+
+            if (foldingListener != null) {
+                switch (state) {
+                    case STATE_UNFOLDING:
+                        foldingListener.onUnfolding(this);
+                        break;
+                    case STATE_FOLDING:
+                        foldingListener.onFoldingBack(this);
+                        break;
+                    case STATE_UNFOLDED:
+                        foldingListener.onUnfolded(this);
+                        break;
+                    case STATE_FOLDED:
+                        foldingListener.onFoldedBack(this);
+                        break;
+                    default:
+                        // Nothing
+                }
+            }
+        }
+
     }
 
     @Override
-    public void setFoldRotation(float rotation, boolean isFromUser) {
+    protected void setFoldRotation(float rotation, boolean isFromUser) {
         super.setFoldRotation(rotation, isFromUser);
-        if (mCoverView == null || mDetailsView == null) return; // nothing we can do here
-
-        rotation = getFoldRotation(); // parent view will correctly keep rotation in bounds for us
-
-        // translating from cover's position to details position
-        float stage = rotation / 180; // from 0 = only cover view, to 1 - only details view
-
-        float fromX = mCoverViewPosition.centerX();
-        float toX = mDetailsViewPosition.centerX();
-
-        float fromY = mCoverViewPosition.top;
-        float toY = mDetailsViewPosition.centerY();
-
-        setTranslationX((fromX - toX) * (1 - stage));
-        setTranslationY((fromY - toY) * (1 - stage));
-
-        // tracking states
-
-        float lastRotation = mLastFoldRotation;
-        mLastFoldRotation = rotation;
-
-        if (mListener != null) mListener.onFoldProgress(this, stage);
-
-        if (rotation > lastRotation && !mIsUnfolding) {
-            mIsUnfolding = true;
-            mIsFoldingBack = false;
-            mIsUnfolded = false;
-
-            if (mListener != null) mListener.onUnfolding(this);
+        if (coverView == null || detailsView == null) {
+            return; // Nothing we can do here
         }
 
-        if (rotation < lastRotation && !mIsFoldingBack) {
-            mIsUnfolding = false;
-            mIsFoldingBack = true;
-            mIsUnfolded = false;
+        rotation = getFoldRotation(); // Parent view will correctly keep rotation in bounds for us
 
-            if (mListener != null) mListener.onFoldingBack(this);
+        // Translating from cover position to details position
+        float stage = rotation / 180f; // From 0 = only cover view, to 1 = only details view
+
+        float fromX = coverViewPosition.centerX();
+        float toX = detailsViewPosition.centerX();
+
+        float fromY = coverViewPosition.top;
+        float toY = detailsViewPosition.centerY();
+
+        setTranslationX((fromX - toX) * (1f - stage));
+        setTranslationY((fromY - toY) * (1f - stage));
+
+        // Tracking states
+
+        final float lastRotation = lastFoldRotation;
+        lastFoldRotation = rotation;
+
+        if (foldingListener != null) {
+            foldingListener.onFoldProgress(this, stage);
         }
 
-        if (rotation == 180 && !mIsUnfolded) {
-            mIsUnfolding = false;
-            mIsFoldingBack = false;
-            mIsUnfolded = true;
-
-            if (mListener != null) mListener.onUnfolded(this);
+        if (rotation > lastRotation) {
+            setState(STATE_UNFOLDING);
         }
 
-        if (rotation == 0 && mIsFoldingBack) {
-            mIsUnfolding = false;
-            mIsFoldingBack = false;
-            mIsUnfolded = false;
+        if (rotation < lastRotation) {
+            setState(STATE_FOLDING);
+        }
 
-            onFoldedBack();
-            if (mListener != null) mListener.onFoldedBack(this);
+        if (rotation == 180f) {
+            setState(STATE_UNFOLDED);
+        }
+
+        if (rotation == 0f && state == STATE_FOLDING) {
+            setState(STATE_FOLDED);
+        }
+
+        // On old versions invalidation is done incorrectly if clipChildren is set to false,
+        // so we have to invalidate entire parent to prevent animation artifacts
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.JELLY_BEAN_MR1) {
+            ((ViewGroup) getParent()).invalidate();
         }
     }
 
@@ -282,31 +265,121 @@ public class UnfoldableView extends FoldableListLayout {
     protected void onFoldRotationChanged(FoldableItemLayout layout, int position) {
         super.onFoldRotationChanged(layout, position);
 
-        float stage = getFoldRotation() / 180; // from 0 = only cover view, to 1 - only details view
+        float stage = getFoldRotation() / 180f; // From 0 = only cover view, to 1 = only details
 
-        float coverW = mCoverViewPosition.width();
-        float detailsW = mDetailsViewPosition.width();
+        final float scale = detailsViewPosition.width() / (float) coverViewPosition.width();
 
-        if (position == 0) { // cover view
-            // scaling cover view from origin size to the size (width) of the details view
-            float coverScale = 1 - (1 - detailsW / coverW) * stage;
+        if (position == 0) { // Cover view
+            // Scaling cover view from origin size to the size (width) of the details view
+            float coverScale = 1f - (1f - scale) * stage;
             layout.setScale(coverScale);
-        } else { // details view
-            // scaling details view from cover's size to the original size
-            float detailsScale = 1 - (1 - coverW / detailsW) * (1 - stage);
+        } else { // Details view
+            // Scaling details view from cover size to the original size
+            float detailsScale = 1f - (1f - 1f / scale) * (1f - stage);
             layout.setScale(detailsScale);
 
-            float dH = mDetailsViewPosition.height() / 2 - mCoverViewPosition.height() * detailsW / coverW;
-            float translationY = stage < 0.5f ? -dH * (1 - 2 * stage) : 0;
+            float dh = coverViewPosition.height() * scale - 0.5f * detailsViewPosition.height();
+            float translationY = stage < 0.5f ? dh * (1f - 2f * stage) : 0f;
 
             layout.setRollingDistance(translationY);
         }
     }
 
+    @Override
+    protected void animateFold(float to) {
+        super.animateFold(to);
+
+        if (to <= getFoldRotation() && state != STATE_FOLDED) {
+            setState(STATE_FOLDING);
+        }
+    }
+
+
+    private void setDetailsViewInternal(View detailsView) {
+        // Saving details view data
+        this.detailsView = detailsView;
+        detailsViewParams = detailsView.getLayoutParams();
+        detailsViewParamWidth = detailsViewParams.width;
+        detailsViewParamHeight = detailsViewParams.height;
+
+        // Getting details view positions on screen
+        detailsViewPosition = getViewGlobalPosition(detailsView);
+
+        // Creating placeholder to show in place of details view
+        detailsPlaceHolderView = createDetailsPlaceHolderView();
+
+        // Setting precise width/height params and switching details view with it's placeholder
+        detailsViewParams.width = detailsViewPosition.width();
+        detailsViewParams.height = detailsViewPosition.height();
+        switchViews(detailsView, detailsPlaceHolderView, detailsViewParams);
+    }
+
+    private void clearDetailsViewInternal() {
+        if (detailsView == null) {
+            return; // Nothing to do
+        }
+
+        // Restoring original width & height params and adding cover view back to it's place
+        detailsViewParams.width = detailsViewParamWidth;
+        detailsViewParams.height = detailsViewParamHeight;
+        switchViews(detailsPlaceHolderView, detailsView, detailsViewParams);
+
+        // Clearing references
+        detailsView = null;
+        detailsViewParams = null;
+        detailsViewPosition = null;
+        detailsPlaceHolderView = null;
+    }
+
+    private void setCoverViewInternal(View coverView) {
+        // Saving cover view data
+        this.coverView = coverView;
+        coverViewParams = coverView.getLayoutParams();
+        coverViewParamWidth = coverViewParams.width;
+        coverViewParamHeight = coverViewParams.height;
+
+        // Getting cover view positions on screen
+        coverViewPosition = getViewGlobalPosition(coverView);
+
+        // Creating placeholder to show in place of cover view
+        coverPlaceHolderView = createCoverPlaceHolderView();
+
+        // Setting precise width & height params and switching cover view with it's placeholder
+        coverViewParams.width = coverViewPosition.width();
+        coverViewParams.height = coverViewPosition.height();
+        switchViews(coverView, coverPlaceHolderView, coverViewParams);
+
+        // Moving cover view into special cover view holder (for unfold animation)
+        coverHolderLayout.setView(coverView, coverViewPosition.width(),
+                coverViewPosition.height());
+    }
+
+    private void clearCoverViewInternal() {
+        if (coverView == null) {
+            return; // Nothing to do
+        }
+
+        // Freeing coverView so we can add it back to it's place
+        coverHolderLayout.clearView();
+
+        // Restoring original width & height params and adding cover view back to it's place
+        coverViewParams.width = coverViewParamWidth;
+        coverViewParams.height = coverViewParamHeight;
+        switchViews(coverPlaceHolderView, coverView, coverViewParams);
+
+        // Clearing references
+        coverView = null;
+        coverViewParams = null;
+        coverViewPosition = null;
+        coverPlaceHolderView = null;
+    }
+
     private void switchViews(View origin, View replacement, ViewGroup.LayoutParams params) {
         ViewGroup parent = (ViewGroup) origin.getParent();
 
-        if (params == null) params = origin.getLayoutParams();
+        if (params == null) {
+            params = origin.getLayoutParams();
+        }
 
         int index = parent.indexOfChild(origin);
         parent.removeViewAt(index);
@@ -322,7 +395,7 @@ public class UnfoldableView extends FoldableListLayout {
 
 
     /**
-     * Simple adapter that will alternate between cover view holder layout and details layout
+     * Simple adapter that will alternate between cover view holder layout and details layout.
      */
     private class Adapter extends BaseAdapter {
 
@@ -332,18 +405,18 @@ public class UnfoldableView extends FoldableListLayout {
         }
 
         @Override
-        public Object getItem(int i) {
+        public Object getItem(int position) {
             return null;
         }
 
         @Override
-        public long getItemId(int i) {
-            return i;
+        public long getItemId(int position) {
+            return position;
         }
 
         @Override
-        public View getView(int i, View recycledView, ViewGroup parent) {
-            return i == 0 ? mCoverHolderLayout : mDetailsView;
+        public View getView(int position, View recycledView, ViewGroup parent) {
+            return position == 0 ? coverHolderLayout : detailsView;
         }
     }
 
@@ -354,38 +427,45 @@ public class UnfoldableView extends FoldableListLayout {
      */
     private static class CoverHolderLayout extends FrameLayout {
 
-        private final Rect mVisibleBounds = new Rect();
+        private final Rect visibleBounds = new Rect();
+        private float origPivotY;
 
-        private CoverHolderLayout(Context context) {
+        CoverHolderLayout(Context context) {
             super(context);
         }
 
         @Override
         protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
             super.onMeasure(widthMeasureSpec, heightMeasureSpec);
-            int h = getMeasuredHeight();
-            setPadding(0, h / 2, 0, 0);
+
+            final int half = getMeasuredHeight() / 2;
+
+            // Cover view should occupy bottom half of the foldable item view
+            setPadding(0, half, 0, 0);
+
+            // If cover view is bigger than half of details view then we need to apply a hack:
+            // we will scale cover view down in Y direction so that it fits half of details view,
+            // and then we will scale foldable item view up to restore original scale
+            View view = getView();
+            float scaleY = view.getMeasuredHeight() > half
+                    ? half / (float) view.getMeasuredHeight() : 1f;
+            view.setScaleY(scaleY);
+            getParentFoldableItem().setScaleFactorY(1f / scaleY);
         }
 
         @Override
         protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
             super.onLayout(changed, left, top, right, bottom);
 
-            // Collecting visible bounds of child view, it will be used to correctly draw shadows
-            // and to improve drawing performance
+            // Collecting visible bounds of child view,
+            // it will be used to correctly draw shadows and to improve drawing performance
             View view = getView();
-            if (view != null) {
-                mVisibleBounds.set(view.getLeft(), view.getTop(),
-                        view.getLeft() + view.getWidth(), view.getTop() + view.getHeight());
-
-                FoldableItemLayout foldableLayout = findParentFoldableLayout();
-                if (foldableLayout != null) foldableLayout.setLayoutVisibleBounds(mVisibleBounds);
-            } else {
-                mVisibleBounds.set(0, 0, 0, 0);
-            }
+            visibleBounds.set(view.getLeft(), view.getTop(),
+                    view.getLeft() + view.getWidth(), view.getTop() + view.getHeight());
+            getParentFoldableItem().setLayoutVisibleBounds(visibleBounds);
         }
 
-        private FoldableItemLayout findParentFoldableLayout() {
+        private FoldableItemLayout getParentFoldableItem() {
             ViewGroup parent = this;
             while (parent != null) {
                 parent = (ViewGroup) parent.getParent();
@@ -393,24 +473,36 @@ public class UnfoldableView extends FoldableListLayout {
                     return (FoldableItemLayout) parent;
                 }
             }
-            return null;
+            throw new AssertionError("CoverHolderLayout is not descendant of FoldableItemLayout");
         }
 
-        private void setView(View view, int w, int h) {
-            removeAllViews();
-            LayoutParams params = new LayoutParams(w, h, Gravity.CENTER_HORIZONTAL);
+        void setView(View view, int width, int height) {
+            LayoutParams params = new LayoutParams(width, height, Gravity.CENTER_HORIZONTAL);
             addView(view, params);
+
+            // Setting temporary pivotal point, see #onMeasure()
+            origPivotY = view.getPivotY();
+            view.setPivotY(0f);
+        }
+
+        void clearView() {
+            // Restoring original scale and pivot point
+            View view = getView();
+            view.setScaleY(1f);
+            view.setPivotY(origPivotY);
+            removeAllViews();
         }
 
         private View getView() {
-            return getChildCount() > 0 ? getChildAt(0) : null;
-        }
-
-        private void clearView() {
-            removeAllViews();
+            if (getChildCount() == 1) {
+                return getChildAt(0);
+            } else {
+                throw new AssertionError("CoverHolderLayout should have exactly one child");
+            }
         }
 
     }
+
 
     public interface OnFoldingListener {
         void onUnfolding(UnfoldableView unfoldableView);

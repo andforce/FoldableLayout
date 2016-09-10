@@ -9,13 +9,14 @@
         android:id="@+id/list_item_image"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:background="#dde"
         android:scaleType="centerCrop" />
 
     <View
         android:layout_width="match_parent"
         android:layout_height="40sp"
-        android:background="@drawable/image_text_shadow"
-        android:layout_gravity="bottom" />
+        android:layout_gravity="bottom"
+        android:background="@drawable/image_text_shadow" />
 
     <TextView
         android:id="@+id/list_item_title"
